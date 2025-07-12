@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rehab Glove Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --light-blue: #e6f2ff;
+            --primary-blue: #3498db;
+            --accent-red: #e74c3c;
+            --accent-green: #2ecc71;
+            --text-dark: #2c3e50;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--light-blue);
+            margin: 0;
+            padding: 10px;
+            color: var(--text-dark);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 10px;
+        }
+
+        h1 {
+            color: var(--text-dark);
+            text-align: center;
+            font-size: 1.5rem;
+            margin: 10px 0;
+        }
+
+        .graph-container {
+            margin-bottom: 15px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            padding: 10px;
+        }
+
+        .graph-title {
+            font-size: 1rem;
+            margin: 5px 0;
+            text-align: center;
+            color: var(--text-dark);
+        }
+
+        .chart-container {
+            height: 200px;
+            width: 100%;
+        }
+
+        .stats-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+            margin: 15px 0;
+        }
+
+        .stat-card {
+            background-color: white;
+            border-radius: 8px;
+            padding: 10px;
+            width: 45%;
+            min-width: 150px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin: 5px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--primary-blue);
+            margin: 5px 0;
+        }
+
+        .last-updated {
+            font-size: 0.8rem;
+            color: #7f8c8d;
+            text-align: center;
+            margin: 10px 0;
+            font-style: italic;
+        }
+
+        .sensor-key {
+            display: none; /* Hidden since we have separate graphs */
+        }
+
+        @media (min-width: 768px) {
+            .stats-container {
+                justify-content: space-between;
+            }
+
+            .stat-card {
+                width: 23%;
+            }
+
+            .chart-container {
+                height: 250px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Rehab Glove Tracker</h1>
+
+        <!-- SFR Sensor Graph -->
+        <div class="graph-container">
+            <div class="graph-title">Force Sensor (SFR)</div>
+            <div class="chart-container">
+                <canvas id="sfrChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Flex Sensor Graph -->
+        <div class="graph-container">
+            <div class="graph-title">Flex Sensor</div>
+            <div class="chart-container">
+                <canvas id="flexChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Accelerometer Graph -->
+        <div class="graph-container">
+            <div class="graph-title">Accelerometer</div>
+            <div class="chart-container">
+                <canvas id="accelChart"></canvas>
+            </div>
+        </div>
+
+        <div class="stats-container">
+            <div class="stat-card">
+                <h3>Session</h3>
+                <div class="stat-value" id="sessionDuration">00:00:00</div>
+            </div>
+            <div class="stat-card">
+                <h3>Flexion</h3>
+                <div class="stat-value" id="avgFlexion">0°</div>
+            </div>
+            <div class="stat-card">
+                <h3>Force</h3>
+                <div class="stat-value" id="peakForce">0 N</div>
+            </div>
+            <div class="stat-card">
+                <h3>Movements</h3>
+                <div class="stat-value" id="movementCount">0</div>
+            </div>
+        </div>
+
+        <div class="last-updated">
+            Last updated: <span id="lastUpdated">Never</span>
+        </div>
+    </div>
+
+    <script>
+        // Sample data structure
+        const chartData = {
+            labels: [],
+            sfrData: [],
+            flexData: [],
+            accelXData: [],
+            accelYData: [],
+            accelZData: [],
+            maxDataPoints: 20 // Keep only the last 20 points for mobile
+        };
+
+        // Initialize charts
+        const sfrCtx = document.getElementById('sfrChart').getContext('2d');
+        const flexCtx = document.getElementById('flexChart').getContext('2d');
+        const accelCtx = document.getElementById('accelChart').getContext('2d');
+
+        const sfrChart = new Chart(sfrCtx, {
+            type: 'line',
+            data: {
+                labels: chartData.labels,
+                datasets: [{
+                    label: 'Force (N)',
+                    data: chartData.sfrData,
+                    borderColor: '#3498db',
+                    backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                    tension: 0.1,
+                    fill: false,
+                    borderWidth: 2,
+                    pointRadius: 1
+                }]
+            },
+            options: chartOptions('Force (N)')
+        });
+
+        const flexChart = new Chart(flexCtx, {
+            type: 'line',
+            data: {
+                labels: chartData.labels,
+                datasets: [{
+                    label: 'Flexion (°)',
+                    data: chartData.flexData,
+                    borderColor: '#e74c3c',
+                    backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                    tension: 0.1,
+                    fill: false,
+                    borderWidth: 2,
+                    pointRadius: 1
+                }]
+            },
+            options: chartOptions('Flexion (°)')
+        });
+
+        const accelChart = new Chart(accelCtx, {
+            type: 'line',
+            data: {
+                labels: chartData.labels,
+                datasets: [
+                    {
+                        label: 'X Axis',
+                        data: chartData.accelXData,
+                        borderColor: '#2ecc71',
+                        backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                        tension: 0.1,
+                        fill: false,
+                        borderWidth: 2,
+                        pointRadius: 1
+                    },
+                    {
+                        label: 'Y Axis',
+                        data: chartData.accelYData,
+                        borderColor: '#f39c12',
+                        backgroundColor: 'rgba(243, 156, 18, 0.1)',
+                        tension: 0.1,
+                        fill: false,
+                        borderWidth: 2,
+                        pointRadius: 1
+                    },
+                    {
+                        label: 'Z Axis',
+                        data: chartData.accelZData,
+                        borderColor: '#9b59b6',
+                        backgroundColor: 'rgba(155, 89, 182, 0.1)',
+                        tension: 0.1,
+                        fill: false,
+                        borderWidth: 2,
+                        pointRadius: 1
+                    }
+                ]
+            },
+            options: chartOptions('Acceleration (g)')
+        });
+
+        function chartOptions(yAxisLabel) {
+            return {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        display: false, // Hide x-axis labels to save space
+                        grid: {
+                            display: false
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: yAxisLabel,
+                            font: {
+                                size: 10
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.05)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            boxWidth: 10,
+                            font: {
+                                size: 10
+                            }
+                        }
+                    },
+                    tooltip: {
+                        bodyFont: {
+                            size: 12
+                        }
+                    }
+                },
+                elements: {
+                    line: {
+                        borderWidth: 2
+                    }
+                }
+            };
+        }
+
+        // Function to add new data point
+        function addDataPoint(data) {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
+
+            // Add to labels
+            chartData.labels.push(timeString);
+
+            // Add to each dataset
+            chartData.sfrData.push(data.sfr);
+            chartData.flexData.push(data.flex);
+            chartData.accelXData.push(data.accelX);
+            chartData.accelYData.push(data.accelY);
+            chartData.accelZData.push(data.accelZ);
+
+            // Update stats
+            document.getElementById('lastUpdated').textContent = `Just now`;
+
+            // Keep only the last N data points
+            if (chartData.labels.length > chartData.maxDataPoints) {
+                chartData.labels.shift();
+                chartData.sfrData.shift();
+                chartData.flexData.shift();
+                chartData.accelXData.shift();
+                chartData.accelYData.shift();
+                chartData.accelZData.shift();
+            }
+
+            // Update charts
+            sfrChart.data.labels = chartData.labels;
+            sfrChart.data.datasets[0].data = chartData.sfrData;
+            sfrChart.update();
+
+            flexChart.data.labels = chartData.labels;
+            flexChart.data.datasets[0].data = chartData.flexData;
+            flexChart.update();
+
+            accelChart.data.labels = chartData.labels;
+            accelChart.data.datasets[0].data = chartData.accelXData;
+            accelChart.data.datasets[1].data = chartData.accelYData;
+            accelChart.data.datasets[2].data = chartData.accelZData;
+            accelChart.update();
+
+            // Update stats cards
+            updateStats(data);
+        }
+
+        // Function to update stats cards
+        function updateStats(data) {
+            // Update session duration (simulated)
+            const seconds = (chartData.labels.length * 1) % 60;
+            const minutes = Math.floor((chartData.labels.length * 1) / 60) % 60;
+            const hours = Math.floor((chartData.labels.length * 1) / 3600);
+            document.getElementById('sessionDuration').textContent =
+                `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+            document.getElementById('avgFlexion').textContent = `${Math.round(data.flex * 1.2)}°`;
+            document.getElementById('peakForce').textContent = `${Math.round(data.sfr * 0.8)} N`;
+            document.getElementById('movementCount').textContent = Math.floor(Math.random() * 10) + 5;
+        }
+
+        // Simulate incoming data (replace with actual WebSocket/ESP32 connection)
+        function simulateData() {
+            const data = {
+                sfr: Math.random() * 100,
+                flex: Math.random() * 90,
+                accelX: Math.random() * 2 - 1,
+                accelY: Math.random() * 2 - 1,
+                accelZ: Math.random() * 2 - 1
+            };
+            addDataPoint(data);
+        }
+
+        // Simulate data every second
+        setInterval(simulateData, 1000);
+
+        // Initial data points
+        for (let i = 0; i < 5; i++) {
+            simulateData();
+        }
+    </script>
+</body>
+</html>
